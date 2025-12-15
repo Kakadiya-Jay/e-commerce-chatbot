@@ -7,6 +7,7 @@ encoder = HuggingFaceEncoder(model_name="sentence-transformers/all-MiniLM-L6-v2"
 
 faq = Route(
     name="FAQ Route",
+    score_threshold=0.3,
     utterances=[
         "What is the return policy of the products?",
         "Do I get discount with the HDFC credit card?",
@@ -18,6 +19,7 @@ faq = Route(
 
 sql = Route(
     name="SQL Route",
+    score_threshold=0.3,
     utterances=[
         "I want to buy nike shoes that have 50% discount.",
         "Are there any shoes under Rs. 3000?",
@@ -30,11 +32,10 @@ sql = Route(
 index = LocalIndex()
 
 router = SemanticRouter(
-    routes=[faq, sql],
     encoder=encoder,
     index=index,
-    score_threshold=0.3,
 )
+router.add(routes=[faq, sql])
 
 if __name__ == "__main__":
     user_query = "Can I return a product if I'm not satisfied?"
