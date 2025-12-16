@@ -5,7 +5,6 @@ from groq import Groq
 import re
 from pathlib import Path
 from dotenv import load_dotenv
-from pandas import DataFrame
 
 load_dotenv()
 
