@@ -9,7 +9,7 @@ from pandas import DataFrame
 
 load_dotenv()
 
-GROQ_MODEL = os.getenv("GROQ_MODEL")
+GROQ_MODEL = os.getenv("GROQ_MODEL_NAME")
 
 db_path = Path(__file__).parent / "db.sqlite"
 
@@ -39,6 +39,18 @@ sql_prompt = f"""
         Just the SQL query is needed, nothing more. Always provide the SQL in between the <SQL></SQL> tags.
     """
 
+comprehension_prompt = """
+You are an expert in understanding the context of the question and replying based on the data pertaining to the question provided. You will be provided with Question: and Data:. The data will be in the form of an array or a dataframe or dict. Reply based on only the data provided as Data for answering the question asked as Question. Do not write anything like 'Based on the data' or any other technical words. Just a plain simple natural language response.
+The Data would always be in context to the question asked. For example is the question is “What is the average rating?” and data is “4.3”, then answer should be “The average rating for the product is 4.3”. So make sure the response is curated with the question and data. Make sure to note the column names to have some context, if needed, for your response.
+There can also be cases where you are given an entire dataframe in the Data: field. Always remember that the data field contains the answer of the question asked. All you need to do is to always reply in the following format when asked about a product: 
+Produt title, price in indian rupees, discount, and rating, and then product link. Take care that all the products are listed in list format, one line after the other. Not as a paragraph.
+For example:
+1. Campus Women Running Shoes: Rs. 1104 (35 percent off), Rating: 4.4 <link>
+2. Campus Women Running Shoes: Rs. 1104 (35 percent off), Rating: 4.4 <link>
+3. Campus Women Running Shoes: Rs. 1104 (35 percent off), Rating: 4.4 <link>
+Always reply in a very concise manner. Never add any extra information.
+"""
+
 
 def generate_sql_query(question):
     chat_completion = client_sql.chat.completions.create(
@@ -67,7 +79,47 @@ def run_query(query):
         return df
 
 
+def sql_chain(question: str):
+    sql_query = generate_sql_query(question)
+    sql_match = re.search(r"<SQL>(.*?)</SQL>", sql_query, re.DOTALL)
+    if sql_match is None:
+        raise ValueError(
+            "No SQL query found in the response. LLM is not able to generate the SQL query."
+        )
+    sql_text = sql_match.group(1).strip()
+    # Basic validation: ensure it's a SELECT query
+    if not sql_text.upper().startswith("SELECT"):
+        raise ValueError(f"Generated SQL does not start with SELECT: {sql_text}")
+    print("Generated SQL Query:", sql_text)
+    response = run_query(sql_text)
+    if response is None:
+        raise ValueError("Sorry there was a problem in executing the SQL query.")
+
+    context = response.to_dict(orient="records")
+    answer = data_comprehention(question, context)
+    return answer
+
+
+def data_comprehention(question, context):
+    chat_completion = client_sql.chat.completions.create(
+        messages=[
+            {
+                "role": "system",
+                "content": comprehension_prompt,
+            },
+            {
+                "role": "user",
+                "content": f"QUESTION: {question}\nDATA: {context}",
+            },
+        ],
+        model=GROQ_MODEL,
+        temperature=0.2,
+    )
+    answer = chat_completion.choices[0].message.content
+    return answer
+
+
 if __name__ == "__main__":
-    question = "All nike shoes in price range 5000 to 10000"
-    result = generate_sql_query(question)
-    print(f"Generated SQL Query: {result}")
+    question = "Give me PUMA shoes with rating above 4.5 and more than 30% discount."
+    result = sql_chain(question)
+    print("\n", result)
